@@ -84,14 +84,18 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
             await flow.CollectAsync(values, static (state, row) =>
             {
                 var list = (CollectList<T>)state!;
-                list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
+                var reader = row.GetReader();
+                list.Add(list.Create(reader.Read<int>(), reader.Read<string>()));
             }, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             await foreach (var result in flow)
             await foreach (var row in result)
-                values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
+            {
+                var reader = row.GetReader();
+                values.Add(create(reader.Read<int>(), reader.Read<string>()));
+            }
         }
         return values;
     }

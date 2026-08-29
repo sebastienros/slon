@@ -14,8 +14,8 @@ Set all of these environment variables before starting the app:
 | `DRIVER` | `slon` or `npgsql` |
 | `CONNECTION_STRING` | PostgreSQL connection string |
 | `DATABASE_CONNECTIONS` | Positive fixed pool size |
-| `SLON_POOL_MODE` | `raw` (default) or `connection` |
-| `SLON_CONSUMPTION_MODE` | `stream` (default) or `collect` |
+| `SLON_POOL_MODE` | `raw` (application default) or `connection` (Crank default) |
+| `SLON_CONSUMPTION_MODE` | `stream` (application default) or `collect` (Crank default) |
 
 Invalid, unsupported, or missing selections fail application startup with an explicit error.
 The Crank config defaults `branchOrCommit` to `main`; override it when benchmarking an
