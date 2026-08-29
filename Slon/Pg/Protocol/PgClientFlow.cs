@@ -323,14 +323,6 @@ public abstract class PgClientFlow : IValueTaskSource<PgDecoder>, IValueTaskSour
         return new(this, _completionCore.Version);
     }
 
-    /// <summary>
-    /// Waits until this flow has fully retired and can be safely reset for another tenure.
-    /// Capture this task before queueing the flow.
-    /// </summary>
-    public ValueTask<PgClientFlow> WaitForCompletionAsync(
-        CancellationToken cancellationToken = default)
-        => WaitForComplete(cancellationToken);
-
     // Synchronous consumers must not block on an async continuation whose dispatch requires another
     // scheduler turn. The event is allocated only for that uncommon path and is signaled after the
     // completion core has published its result.
