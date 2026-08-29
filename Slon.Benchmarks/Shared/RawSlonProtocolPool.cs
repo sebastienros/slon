@@ -81,35 +81,28 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
     {
         var slot = GetSlot();
         var flow = slot.GetFlow();
-        var queued = false;
-        try
-        {
-            if (!slot.Protocol.TryQueue(flow, cancellationToken: cancellationToken))
-                throw new InvalidOperationException("The selected PostgreSQL protocol is unavailable.");
-            queued = true;
+        var completion = flow.WaitForCompletionAsync();
+        if (!slot.Protocol.TryQueue(flow, cancellationToken: cancellationToken))
+            throw new InvalidOperationException("The selected PostgreSQL protocol is unavailable.");
 
-            var values = new CollectList<T>(create);
-            if (_consumptionMode is SlonConsumptionMode.Collect)
-            {
-                await flow.CollectAsync(values, static (state, row) =>
-                {
-                    var list = (CollectList<T>)state!;
-                    list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
-                }, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await foreach (var result in flow)
-                await foreach (var row in result)
-                    values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
-            }
-            return values;
-        }
-        finally
+        var values = new CollectList<T>(create);
+        if (_consumptionMode is SlonConsumptionMode.Collect)
         {
-            if (!queued || flow.IsCompleted)
-                slot.ReturnFlow(flow);
+            await flow.CollectAsync(values, static (state, row) =>
+            {
+                var list = (CollectList<T>)state!;
+                list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
+            }, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            await foreach (var result in flow)
+            await foreach (var row in result)
+                values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
+        }
+        _ = await completion.ConfigureAwait(false);
+        slot.ReturnFlow(flow);
+        return values;
     }
 
     Slot GetSlot()

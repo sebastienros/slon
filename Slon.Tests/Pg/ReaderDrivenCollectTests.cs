@@ -136,9 +136,10 @@ public class ReaderDrivenCollectTests
 
         for (var tenure = 0; tenure < 3; tenure++)
         {
+            var completion = flow.WaitForCompletionAsync();
             protocol.Queue(flow);
             CollectionAssert.AreEqual(new[] { 42 }, await CollectInts(flow));
-            Assert.IsTrue(flow.IsCompleted);
+            Assert.AreSame(flow, await completion);
             flow.Reset();
         }
 
