@@ -83,7 +83,7 @@ internal sealed class FullSlonConnectionPool : IAsyncDisposable
         {
             _queue.Enqueue((action, state));
             if (Interlocked.Exchange(ref _scheduled, 1) == 0)
-                System.Threading.ThreadPool.UnsafeQueueUserWorkItem(
+                ThreadPool.UnsafeQueueUserWorkItem(
                     static scheduler => scheduler.Drain(),
                     this,
                     preferLocal);
