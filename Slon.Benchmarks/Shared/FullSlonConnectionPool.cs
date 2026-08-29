@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Net;
+using Draghi.Pipelining;
 using Npgsql;
 using Slon.Pg;
 using Slon.Pg.Protocol;
@@ -41,7 +43,8 @@ internal sealed class FullSlonConnectionPool : IAsyncDisposable
             SocketStreamConnection.CreateFactory(clientOptions.EndPoint, new TransportConnectionOptions
             {
                 UseZeroByteReads = false,
-            }));
+            }),
+            static options => options.ActivationScheduler = BatchedActivationScheduler.Next());
 
         // Every pooled wire installs the same named statement. Obtain its immutable descriptor once;
         // later flows can be created before placement and use it on whichever wire the pool selects.
@@ -58,6 +61,46 @@ internal sealed class FullSlonConnectionPool : IAsyncDisposable
                 ConnectionIdleLifetime = Timeout.InfiniteTimeSpan,
             });
         return new(pool, command, consumptionMode);
+    }
+
+    sealed class BatchedActivationScheduler : PipelineScheduler
+    {
+        static readonly BatchedActivationScheduler[] Schedulers =
+            Enumerable.Range(0, 8).Select(static _ => new BatchedActivationScheduler()).ToArray();
+        static int s_nextScheduler = -1;
+
+        readonly ConcurrentQueue<(Action<object?> Action, object? State)> _queue = new();
+        int _scheduled;
+
+        internal static BatchedActivationScheduler Next()
+            => Schedulers[(int)((uint)Interlocked.Increment(ref s_nextScheduler)
+                % (uint)Schedulers.Length)];
+
+        public override void SubmitDetached(
+            Action<object?> action,
+            object? state,
+            bool preferLocal = true)
+        {
+            _queue.Enqueue((action, state));
+            if (Interlocked.Exchange(ref _scheduled, 1) == 0)
+                ThreadPool.UnsafeQueueUserWorkItem(
+                    static scheduler => scheduler.Drain(),
+                    this,
+                    preferLocal);
+        }
+
+        void Drain()
+        {
+            while (true)
+            {
+                while (_queue.TryDequeue(out var work))
+                    work.Action(work.State);
+
+                Volatile.Write(ref _scheduled, 0);
+                if (_queue.IsEmpty || Interlocked.Exchange(ref _scheduled, 1) != 0)
+                    return;
+            }
+        }
     }
 
     public async ValueTask<List<T>> LoadAsync<T>(
