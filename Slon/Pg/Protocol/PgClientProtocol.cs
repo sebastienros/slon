@@ -1409,9 +1409,7 @@ public sealed partial class PgClientProtocol : IDisposable, IAsyncDisposable
                 item.PrepareActivationDispatch(_control);
                 // SubmitDetached must not throw (the PipeScheduler.Schedule-style dispatch contract); a
                 // caller handing us a fallible scheduler owns the resulting connection breakage. No guard.
-                // Activations resume request work, so publish globally instead of concentrating
-                // continuations on the pipeline advancer's local queue.
-                ActivationScheduler.SubmitDetached((IThreadPoolWorkItem)item, preferLocal: false);
+                ActivationScheduler.SubmitDetached((IThreadPoolWorkItem)item, preferLocal: true);
             }
             else
                 _control.Activate(item);
