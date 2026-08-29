@@ -466,7 +466,6 @@ public abstract class PgClientFlow : IValueTaskSource<PgDecoder>, IValueTaskSour
         /// converts graceful semantics into forceful cancellation on the next I/O op.
         public CancellationToken StoppingToken => _executionControl.StoppingToken;
         internal void SubmitDetached(Action<object?> action, object? state) => _executionControl.SubmitDetached(action, state);
-        internal bool HasQueuedFlow => _executionControl.HasQueuedFlow;
 
         /// True when this protocol has entered <c>Shutdown</c>. Use as the <c>when</c> filter on
         /// a <c>PgClientClosedException</c> catch so a closed exception bubbling up from a
