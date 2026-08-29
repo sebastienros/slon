@@ -15,6 +15,8 @@ internal abstract class FortuneDatabase : IAsyncDisposable
     public abstract ValueTask<List<Fortune>> LoadAsync(
         CancellationToken cancellationToken);
 
+    public virtual void Return(List<Fortune> fortunes) { }
+
     public static ValueTask<FortuneDatabase> CreateAsync(
         string? database,
         string? driver,
@@ -120,6 +122,8 @@ internal sealed class RawSlonFortuneDatabase(RawSlonProtocolPool pool) : Fortune
     }
 
     public override ValueTask DisposeAsync() => pool.DisposeAsync();
+
+    public override void Return(List<Fortune> fortunes) => pool.Return(fortunes);
 }
 
 internal sealed class ConnectionSlonFortuneDatabase(FullSlonConnectionPool pool) : FortuneDatabase

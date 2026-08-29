@@ -85,24 +85,39 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
         if (!slot.Protocol.TryQueue(flow, cancellationToken: cancellationToken))
             throw new InvalidOperationException("The selected PostgreSQL protocol is unavailable.");
 
-        var values = new CollectList<T>(create);
-        if (_consumptionMode is SlonConsumptionMode.Collect)
+        var values = CollectListPool<T>.Get(create);
+        try
         {
-            await flow.CollectAsync(values, static (state, row) =>
+            if (_consumptionMode is SlonConsumptionMode.Collect)
             {
-                var list = (CollectList<T>)state!;
-                list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
-            }, cancellationToken).ConfigureAwait(false);
+                await flow.CollectAsync(values, static (state, row) =>
+                {
+                    var list = (CollectList<T>)state!;
+                    list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await foreach (var result in flow)
+                await foreach (var row in result)
+                    values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
+            }
+            _ = await completion.ConfigureAwait(false);
+            slot.ReturnFlow(flow);
+            return values;
         }
-        else
+        catch
         {
-            await foreach (var result in flow)
-            await foreach (var row in result)
-                values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
+            CollectListPool<T>.Return(values);
+            throw;
         }
-        _ = await completion.ConfigureAwait(false);
-        slot.ReturnFlow(flow);
-        return values;
+    }
+
+    public void Return<T>(List<T> values)
+    {
+        if (values is not CollectList<T> pooled)
+            throw new ArgumentException("The list was not created by this pool.", nameof(values));
+        CollectListPool<T>.Return(pooled);
     }
 
     Slot GetSlot()
@@ -173,9 +188,38 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
         }
     }
 
-    sealed class CollectList<T>(Func<int, string, T> create) : List<T>(16)
+    sealed class CollectList<T> : List<T>
     {
-        internal Func<int, string, T> Create { get; } = create;
+        internal CollectList() : base(16) { }
+
+        internal Func<int, string, T> Create { get; set; } = null!;
+    }
+
+    static class CollectListPool<T>
+    {
+        static readonly DefaultObjectPool<CollectList<T>> Pool =
+            new(new Policy(), maximumRetained: 1024);
+
+        internal static CollectList<T> Get(Func<int, string, T> create)
+        {
+            var list = Pool.Get();
+            list.Create = create;
+            return list;
+        }
+
+        internal static void Return(CollectList<T> list) => Pool.Return(list);
+
+        sealed class Policy : PooledObjectPolicy<CollectList<T>>
+        {
+            public override CollectList<T> Create() => new();
+
+            public override bool Return(CollectList<T> list)
+            {
+                list.Clear();
+                list.Create = null!;
+                return true;
+            }
+        }
     }
 }
 

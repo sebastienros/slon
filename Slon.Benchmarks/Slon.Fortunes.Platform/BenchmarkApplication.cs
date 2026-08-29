@@ -28,17 +28,25 @@ public sealed partial class BenchmarkApplication
                 : RequestType.NotRecognized;
     }
 
-    private Task ProcessRequestAsync() => _requestType switch
+    private ValueTask ProcessRequestAsync() => _requestType switch
     {
         RequestType.Fortunes => RenderDatabaseAsync(),
-        _ => OutputEmptyAsync(Writer),
+        _ => new(OutputEmptyAsync(Writer)),
     };
 
-    private async Task RenderDatabaseAsync()
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+    private async ValueTask RenderDatabaseAsync()
     {
-        var template = Templates.Fortunes.Create(
-            await Database.LoadAsync(ConnectionClosed));
-        await OutputFortunesAsync(Writer, template);
+        var fortunes = await Database.LoadAsync(ConnectionClosed).ConfigureAwait(false);
+        try
+        {
+            var template = Templates.Fortunes.Create(fortunes);
+            await OutputFortunesAsync(Writer, template).ConfigureAwait(false);
+        }
+        finally
+        {
+            Database.Return(fortunes);
+        }
     }
 
     private ValueTask OutputFortunesAsync(
@@ -84,7 +92,7 @@ public sealed partial class BenchmarkApplication
         ChunkedPipeWriter chunkedWriter,
         RazorSlice template)
     {
-        await renderTask;
+        await renderTask.ConfigureAwait(false);
         EndTemplateRendering(chunkedWriter, template);
     }
 
