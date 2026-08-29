@@ -76,7 +76,7 @@ public sealed class ReaderDrivenCommandFlow : PgClientFlow, IValueTaskSource<boo
         _collectSource.CanCompleteConcurrently = true;
     }
 
-    protected override bool EnableActivationTimeout => true;
+    protected override bool EnableActivationTimeout => _options.EnableActivationTimeout;
     protected override TimeSpan? PendingTimeout => _options.PendingTimeout;
 
     internal override void BindCallerToken(CancellationToken cancellationToken)

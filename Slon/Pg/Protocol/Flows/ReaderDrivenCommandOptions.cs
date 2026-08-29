@@ -24,6 +24,13 @@ public sealed class ReaderDrivenCommandOptions
 
     public TimeSpan? PendingTimeout { get; }
 
+    /// <summary>
+    /// Whether the flow uses the protocol's activation timeout while waiting for its turn.
+    /// Disable this only when the caller can wait indefinitely; doing so permits completed flows
+    /// to be reset and reused safely.
+    /// </summary>
+    public bool EnableActivationTimeout { get; init; } = true;
+
     internal ref readonly Command Template => ref _template;
 
     internal Command CreateCommand(in ParameterSource parameters)

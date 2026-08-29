@@ -1,4 +1,6 @@
 using System.Net;
+using System.Runtime.CompilerServices;
+using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 using Slon.Pg;
 using Slon.Pg.Protocol;
@@ -51,7 +53,10 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
                 try
                 {
                     var command = await PrepareAsync(protocol).ConfigureAwait(false);
-                    slots[created] = new(protocol, new ReaderDrivenCommandOptions(command));
+                    slots[created] = new(protocol, new ReaderDrivenCommandOptions(command)
+                    {
+                        EnableActivationTimeout = false,
+                    });
                 }
                 catch
                 {
@@ -69,31 +74,42 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
         }
     }
 
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
     public async ValueTask<List<T>> LoadAsync<T>(
         Func<int, string, T> create,
         CancellationToken cancellationToken)
     {
         var slot = GetSlot();
-        var flow = new ReaderDrivenCommandFlow(slot.Options);
-        if (!slot.Protocol.TryQueue(flow, cancellationToken: cancellationToken))
-            throw new InvalidOperationException("The selected PostgreSQL protocol is unavailable.");
+        var flow = slot.GetFlow();
+        var queued = false;
+        try
+        {
+            if (!slot.Protocol.TryQueue(flow, cancellationToken: cancellationToken))
+                throw new InvalidOperationException("The selected PostgreSQL protocol is unavailable.");
+            queued = true;
 
-        var values = new CollectList<T>(create);
-        if (_consumptionMode is SlonConsumptionMode.Collect)
-        {
-            await flow.CollectAsync(values, static (state, row) =>
+            var values = new CollectList<T>(create);
+            if (_consumptionMode is SlonConsumptionMode.Collect)
             {
-                var list = (CollectList<T>)state!;
-                list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
-            }, cancellationToken).ConfigureAwait(false);
+                await flow.CollectAsync(values, static (state, row) =>
+                {
+                    var list = (CollectList<T>)state!;
+                    list.Add(list.Create(row.GetValue<int>(0), row.GetValue<string>(1)));
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await foreach (var result in flow)
+                await foreach (var row in result)
+                    values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
+            }
+            return values;
         }
-        else
+        finally
         {
-            await foreach (var result in flow)
-            await foreach (var row in result)
-                values.Add(create(row.GetValue<int>(0), row.GetValue<string>(1)));
+            if (!queued || flow.IsCompleted)
+                slot.ReturnFlow(flow);
         }
-        return values;
     }
 
     Slot GetSlot()
@@ -143,11 +159,28 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
 
     sealed class Slot(PgClientProtocol protocol, ReaderDrivenCommandOptions options)
     {
+        readonly DefaultObjectPool<ReaderDrivenCommandFlow> _flows =
+            new(new FlowPolicy(options), maximumRetained: 16);
+
         internal PgClientProtocol Protocol { get; } = protocol;
-        internal ReaderDrivenCommandOptions Options { get; } = options;
+
+        internal ReaderDrivenCommandFlow GetFlow() => _flows.Get();
+        internal void ReturnFlow(ReaderDrivenCommandFlow flow) => _flows.Return(flow);
+
+        sealed class FlowPolicy(ReaderDrivenCommandOptions options)
+            : PooledObjectPolicy<ReaderDrivenCommandFlow>
+        {
+            public override ReaderDrivenCommandFlow Create() => new(options);
+
+            public override bool Return(ReaderDrivenCommandFlow flow)
+            {
+                flow.Reset();
+                return true;
+            }
+        }
     }
 
-    sealed class CollectList<T>(Func<int, string, T> create) : List<T>
+    sealed class CollectList<T>(Func<int, string, T> create) : List<T>(16)
     {
         internal Func<int, string, T> Create { get; } = create;
     }

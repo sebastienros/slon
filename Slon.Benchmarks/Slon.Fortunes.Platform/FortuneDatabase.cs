@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Npgsql;
 using Slon.Fortunes;
 
@@ -109,6 +110,7 @@ internal sealed class RawSlonFortuneDatabase(RawSlonProtocolPool pool) : Fortune
         => new RawSlonFortuneDatabase(await RawSlonProtocolPool.CreateAsync(
             connectionString, connectionCount, consumptionMode).ConfigureAwait(false));
 
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
     public override async ValueTask<List<Fortune>> LoadAsync(
         CancellationToken cancellationToken)
     {
@@ -127,6 +129,7 @@ internal sealed class ConnectionSlonFortuneDatabase(FullSlonConnectionPool pool)
         => new ConnectionSlonFortuneDatabase(await FullSlonConnectionPool.CreateAsync(
             connectionString, connectionCount, consumptionMode).ConfigureAwait(false));
 
+    [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
     public override async ValueTask<List<Fortune>> LoadAsync(CancellationToken cancellationToken)
     {
         var fortunes = await pool.LoadAsync(
