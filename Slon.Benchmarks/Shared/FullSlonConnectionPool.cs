@@ -1,4 +1,5 @@
 using System.Net;
+using Draghi.Pipelining;
 using Npgsql;
 using Slon.Pg;
 using Slon.Pg.Protocol;
@@ -41,7 +42,8 @@ internal sealed class FullSlonConnectionPool : IAsyncDisposable
             SocketStreamConnection.CreateFactory(clientOptions.EndPoint, new TransportConnectionOptions
             {
                 UseZeroByteReads = false,
-            }));
+            }),
+            static options => options.ActivationScheduler = InlineActivationScheduler.Instance);
 
         // Every pooled wire installs the same named statement. Obtain its immutable descriptor once;
         // later flows can be created before placement and use it on whichever wire the pool selects.
@@ -58,6 +60,17 @@ internal sealed class FullSlonConnectionPool : IAsyncDisposable
                 ConnectionIdleLifetime = Timeout.InfiniteTimeSpan,
             });
         return new(pool, command, consumptionMode);
+    }
+
+    sealed class InlineActivationScheduler : PipelineScheduler
+    {
+        internal static InlineActivationScheduler Instance { get; } = new();
+
+        public override void SubmitDetached(
+            Action<object?> action,
+            object? state,
+            bool preferLocal = true)
+            => action(state);
     }
 
     public async ValueTask<List<T>> LoadAsync<T>(
