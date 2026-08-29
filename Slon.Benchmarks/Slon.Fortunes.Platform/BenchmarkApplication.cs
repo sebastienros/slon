@@ -70,12 +70,13 @@ public sealed partial class BenchmarkApplication
         var preamble =
             "HTTP/1.1 200 OK\r\nServer: K\r\nContent-Type: text/html; charset=utf-8\r\nTransfer-Encoding: chunked"u8;
         var headersLength = preamble.Length + DateHeader.HeaderBytes.Length;
-        Span<byte> headers = stackalloc byte[headersLength];
-        preamble.CopyTo(headers);
-        DateHeader.HeaderBytes.CopyTo(headers[preamble.Length..]);
+        var headersSpan = pipeWriter.GetSpan(headersLength);
+        preamble.CopyTo(headersSpan);
+        DateHeader.HeaderBytes.CopyTo(headersSpan[preamble.Length..]);
+        pipeWriter.Advance(headersLength);
 
         var writer = ChunkedWriterPool.Get();
-        writer.SetOutput(pipeWriter, headers, 2048);
+        writer.SetOutput(pipeWriter, 2048);
         return writer;
     }
 

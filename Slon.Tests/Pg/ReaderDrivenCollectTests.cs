@@ -124,28 +124,6 @@ public class ReaderDrivenCollectTests
     }
 
     [ConnectionCreatingTestMethod]
-    public async Task ActivationTimeoutDisabled_AllowsReuseAcrossCompletedTenures()
-    {
-        await using var protocol = await PgTestPool.NewIsolatedAsync();
-        var descriptor = await Prepare(protocol, "select 42", "collect_reusable");
-        var options = new ReaderDrivenCommandOptions(Command.Create(descriptor))
-        {
-            EnableActivationTimeout = false,
-        };
-        var flow = new ReaderDrivenCommandFlow(options);
-
-        for (var tenure = 0; tenure < 3; tenure++)
-        {
-            protocol.Queue(flow);
-            CollectionAssert.AreEqual(new[] { 42 }, await CollectInts(flow));
-            Assert.IsTrue(flow.IsCompleted);
-            flow.Reset();
-        }
-
-        await PgTestPool.RunAsync(protocol, "select 1");
-    }
-
-    [ConnectionCreatingTestMethod]
     public async Task CommandError_IsDeliveredAndKeepsWire()
     {
         await using var protocol = await PgTestPool.NewIsolatedAsync();

@@ -18,22 +18,18 @@ internal sealed class ChunkedPipeWriter : PipeWriter
     private StandardFormat _hexFormat = DefaultHexFormat;
     private Memory<byte> _currentFullChunk;
     private Memory<byte> _currentChunk;
-    private int _prefixLength;
     private int _buffered;
     private long _unflushedBytes;
     private bool _ended;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void SetOutput(
-        PipeWriter output,
-        scoped ReadOnlySpan<byte> prefix,
-        int chunkSizeHint = DefaultChunkSizeHint)
+    public void SetOutput(PipeWriter output, int chunkSizeHint = DefaultChunkSizeHint)
     {
         _buffered = 0;
         _unflushedBytes = 0;
         _chunkSizeHint = chunkSizeHint;
         _output = output;
-        StartNewChunk(chunkSizeHint, isFirst: true, prefix);
+        StartNewChunk(chunkSizeHint, isFirst: true);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -46,7 +42,6 @@ internal sealed class ChunkedPipeWriter : PipeWriter
         _hexFormat = DefaultHexFormat;
         _currentFullChunk = default;
         _currentChunk = default;
-        _prefixLength = 0;
     }
 
     public override bool CanGetUnflushedBytes => true;
@@ -104,10 +99,7 @@ internal sealed class ChunkedPipeWriter : PipeWriter
         n <= 16 ? 1 : (BitOperations.Log2((uint)n) >> 2) + 1;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void StartNewChunk(
-        int sizeHint,
-        bool isFirst = false,
-        scoped ReadOnlySpan<byte> prefix = default)
+    private void StartNewChunk(int sizeHint, bool isFirst = false)
     {
         ThrowIfEnded();
 
@@ -117,12 +109,7 @@ internal sealed class ChunkedPipeWriter : PipeWriter
             oldFullChunkHexLength = CountHexDigits(_currentFullChunk.Length);
         }
 
-        var prefixLength = prefix.Length;
-        var outputMemory = _output.GetMemory(
-            checked(prefixLength + Math.Max(_chunkSizeHint, sizeHint)));
-        prefix.CopyTo(outputMemory.Span);
-        _prefixLength = prefixLength;
-        _currentFullChunk = outputMemory[prefixLength..];
+        _currentFullChunk = _output.GetMemory(Math.Max(_chunkSizeHint, sizeHint));
         var newFullChunkHexLength = CountHexDigits(_currentFullChunk.Length);
         var currentFullChunkSpan = _currentFullChunk.Span;
         currentFullChunkSpan[..newFullChunkHexLength].Fill((byte)'0');
@@ -149,8 +136,7 @@ internal sealed class ChunkedPipeWriter : PipeWriter
             {
                 var terminator = "0\r\n\r\n"u8;
                 terminator.CopyTo(_currentFullChunk.Span);
-                _output.Advance(_prefixLength + terminator.Length);
-                _prefixLength = 0;
+                _output.Advance(terminator.Length);
             }
 
             return;
@@ -171,8 +157,7 @@ internal sealed class ChunkedPipeWriter : PipeWriter
 
         if (!isFinal)
         {
-            _output.Advance(_prefixLength + chunkTotalLength);
-            _prefixLength = 0;
+            _output.Advance(chunkTotalLength);
             StartNewChunk(sizeHint);
         }
         else
@@ -181,14 +166,13 @@ internal sealed class ChunkedPipeWriter : PipeWriter
             if (chunkTotalLength + terminator.Length <= span.Length)
             {
                 terminator.CopyTo(span[chunkTotalLength..]);
-                _output.Advance(_prefixLength + chunkTotalLength + terminator.Length);
+                _output.Advance(chunkTotalLength + terminator.Length);
             }
             else
             {
-                _output.Advance(_prefixLength + chunkTotalLength);
+                _output.Advance(chunkTotalLength);
                 _output.Write(terminator);
             }
-            _prefixLength = 0;
         }
 
         _buffered = 0;
