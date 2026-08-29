@@ -19,7 +19,7 @@ internal sealed class FullSlonConnectionPool : IAsyncDisposable
     FullSlonConnectionPool(ConnectionPool<ProtocolConnection> pool, Command command,
         SlonConsumptionMode consumptionMode)
         => (_pool, _options, _consumptionMode) =
-            (pool, new ReaderDrivenCommandOptions(command), consumptionMode);
+            (pool, new ReaderDrivenCommandOptions(command) { CoalesceSync = true }, consumptionMode);
 
     internal static async ValueTask<FullSlonConnectionPool> CreateAsync(
         string connectionString,

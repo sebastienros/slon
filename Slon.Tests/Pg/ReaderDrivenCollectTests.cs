@@ -121,6 +121,25 @@ public class ReaderDrivenCollectTests
             BinaryPrimitives.WriteInt32BigEndian(bytes, value);
             return new(ImmutableArray.Create(Parameter.Create(bytes, (Oid)23u)));
         }
+
+        [ConnectionCreatingTestMethod]
+        public async Task CoalescedSync_PipelinedCollectorsCompleteAtTheirResultBoundaries()
+        {
+            await using var protocol = await PgTestPool.NewIsolatedAsync();
+            var descriptor = await Prepare(protocol, "select 42", "collect_coalesced_sync");
+            var options = new ReaderDrivenCommandOptions(Command.Create(descriptor))
+            {
+                CoalesceSync = true,
+            };
+            var flows = Enumerable.Range(0, 8)
+                .Select(_ => protocol.Queue(new ReaderDrivenCommandFlow(options)))
+                .ToArray();
+
+            foreach (var flow in flows)
+                CollectionAssert.AreEqual(new[] { 42 }, await CollectInts(flow));
+
+            await PgTestPool.RunAsync(protocol, "select 1");
+        }
     }
 
     [ConnectionCreatingTestMethod]

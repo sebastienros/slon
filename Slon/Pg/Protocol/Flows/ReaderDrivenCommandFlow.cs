@@ -106,7 +106,8 @@ public sealed class ReaderDrivenCommandFlow : PgClientFlow, IValueTaskSource<boo
         try
         {
             var command = _options.CreateCommand(_parameters);
-            var appendSync = !command.WithSync;
+            var appendSync = !command.WithSync
+                && (!_options.CoalesceSync || !context.HasQueuedFlow);
             _readFlowRfq = appendSync;
             // Caller cancellation never cancels wire I/O. The consumer observes the latched intent and
             // drains its command to RFQ instead.
@@ -409,15 +410,17 @@ public sealed class ReaderDrivenCommandFlow : PgClientFlow, IValueTaskSource<boo
                 .DisposeAsync().ConfigureAwait(false);
         }
 
-        // Exactly one ReadyForQuery follows the terminal (the command's own Sync or the appended one).
-        var rfqDecoder = _decoder!;
-        if (!rfqDecoder.TryMoveNext())
+        if (_readFlowRfq)
         {
-            if (!await rfqDecoder.MoveNextAsync().ConfigureAwait(false))
-                rfqDecoder.ThrowUnexpectedEof();
+            var rfqDecoder = _decoder!;
+            if (!rfqDecoder.TryMoveNext())
+            {
+                if (!await rfqDecoder.MoveNextAsync().ConfigureAwait(false))
+                    rfqDecoder.ThrowUnexpectedEof();
+            }
+            if (rfqDecoder.Current.EnsureExpectedOrError(PgTypes.BackendType.ReadyForQuery) is { } rfqError)
+                PgErrorException.Throw(rfqError);
         }
-        if (rfqDecoder.Current.EnsureExpectedOrError(PgTypes.BackendType.ReadyForQuery) is { } rfqError)
-            PgErrorException.Throw(rfqError);
     }
 
 #if !NET11_0_OR_GREATER
