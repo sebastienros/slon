@@ -51,10 +51,7 @@ internal sealed class RawSlonProtocolPool : IAsyncDisposable
                 try
                 {
                     var command = await PrepareAsync(protocol).ConfigureAwait(false);
-                    slots[created] = new(protocol, new ReaderDrivenCommandOptions(command)
-                    {
-                        CoalesceSync = true,
-                    });
+                    slots[created] = new(protocol, new ReaderDrivenCommandOptions(command));
                 }
                 catch
                 {

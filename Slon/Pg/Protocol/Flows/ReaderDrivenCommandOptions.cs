@@ -24,12 +24,6 @@ public sealed class ReaderDrivenCommandOptions
 
     public TimeSpan? PendingTimeout { get; }
 
-    /// <summary>
-    /// Allows adjacent queued executions to share a trailing Sync message. This reduces protocol
-    /// barriers for workloads that pipeline independent commands on the same wire.
-    /// </summary>
-    public bool CoalesceSync { get; init; }
-
     internal ref readonly Command Template => ref _template;
 
     internal Command CreateCommand(in ParameterSource parameters)
